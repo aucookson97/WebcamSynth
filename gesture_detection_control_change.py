@@ -14,7 +14,8 @@ RED_THRESHOLD = ((0, 100, 64), (10, 255, 255)) # Low and High HSV Threshold for 
 
 threshold_velocity = int(127 - THRESHOLD_DISTANCE * VEL_PER_INCHES)
 
-last_note = MIDDLE_NOTE
+last_cc_val_x = 0
+last_cc_val_y = 0
 
 # UI Params
 LINE_LENGTH = 80
@@ -24,7 +25,7 @@ LINE_WIDTH = 6
 NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
 def run_camera():
-    global last_note
+    global last_cc_val_x, last_cc_val_y
     cap = cv2.VideoCapture(0)
     
     while (True):
@@ -51,16 +52,19 @@ def run_camera():
         
         if (kp_red != None):
             cv2.circle(img_out, (int(kp_red.pt[0]), int(kp_red.pt[1])), int(kp_red.size/2+.5), (0, 255, 0), 4)
-            draw_ui(img_out, kp_green, kp_red)
+            #draw_ui(img_out, kp_green, kp_red)
 
 
         if (kp_green != None and kp_red != None):
-            note = get_note(kp_green, kp_red)
+            cc = get_cc(kp_green, kp_red)
+            if (cc[0] != last_cc_val_x):
+                midiout.send_message((0xb0, 0x10, cc[0]))
+                last_cc_val_x = cc[0]
+           ## print (cc[1])
 
-        if (kp_red == None or kp_green == None):
-            note_off = [0x80, last_note, 0]
-            midiout.send_message(note_off)
-            last_note = 0
+            if (cc[1] != last_cc_val_y):
+                midiout.send_message((0xb0, 0x11, cc[1]))
+                last_cc_val_y = cc[0]
 
         cv2.imshow('Frame', img_out)
         #cv2.imshow('Red', red_mask)
@@ -71,6 +75,23 @@ def run_camera():
 
     cap.release()
     cv2.destroyAllWindows()
+
+
+def get_cc(kp_green, kp_red):
+    relative_loc_pixels_x =  kp_green.pt[0] - kp_red.pt[0]
+    relative_loc_pixels_y = -(kp_green.pt[1] - kp_red.pt[1])
+    
+    ppi = get_ppi(kp_green, kp_red)
+    cc_per_inch_x = 127.0 / (20 - 4)
+    cc_per_inch_y = 127.0 / (24)
+
+    cc_val_x = int(max(min(cc_per_inch_x * (relative_loc_pixels_x / ppi - 4), 127), 0))
+    cc_val_y = int(max(min(cc_per_inch_y * (12 + relative_loc_pixels_y / ppi), 100), 0))
+    
+    cc = (cc_val_x, cc_val_y)
+    return cc
+
+
 
 def get_note(kp_green, kp_red):
     global last_note
